@@ -1,0 +1,8 @@
+requests
+playwright
+SpeechRecognition
+pydub
+torch
+torchvision
+pillow
+numpy

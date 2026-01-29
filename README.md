@@ -24,7 +24,7 @@ TitanScraper is a high-performance scraping library designed to bypass the tough
 
 ```bash
 # 1. Install Python packages
-pip install .
+pip install TitanScraper-Pro
 
 # 2. Install Playwright Browsers
 playwright install chromium

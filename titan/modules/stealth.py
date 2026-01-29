@@ -3,12 +3,6 @@ import time
 from collections import OrderedDict
 from typing import Dict, Any, Optional
 
-try:
-    from fake_useragent import UserAgent
-    HAS_UA = True
-except ImportError:
-    HAS_UA = False
-
 class StealthManager:
     """Stealth mode implementation"""
     
@@ -21,15 +15,14 @@ class StealthManager:
         self.browser_quirks = browser_quirks
         self.simulate_viewport = simulate_viewport
         
-        # User Agent rotator
-        if HAS_UA:
-            try:
-                self.ua = UserAgent(browsers=['chrome', 'edge'], os=['windows', 'macos'])
-            except:
-                self.ua = None
-        else:
-            self.ua = None
-            
+        # Static modern UAs for maximum speed
+        self.static_uas = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ]
+        
         # Generate a session fingerprint that stays consistent for this "User"
         self.fingerprint = self._generate_fingerprint()
         
@@ -38,21 +31,16 @@ class StealthManager:
         resolutions = [(1920, 1080), (1366, 768), (1536, 864), (1440, 900)]
         screen_w, screen_h = random.choice(resolutions)
         
-        ua_string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        if self.ua:
-            try:
-                ua_string = self.ua.random
-            except:
-                pass
+        ua_string = random.choice(self.static_uas)
                 
         return {
             "screen_width": screen_w,
             "screen_height": screen_h,
-            "viewport_width": screen_w, # Usually slightly less, but let's keep it simple or safe
+            "viewport_width": screen_w, 
             "viewport_height": screen_h - 100,
             "user_agent": ua_string,
             "locale": "en-US",
-            "timezone": "America/New_York", # Ideally this should match IP, but we default to common
+            "timezone": "America/New_York",
             "platform": "Win32" if "Windows" in ua_string else "MacIntel"
         }
 
@@ -96,7 +84,6 @@ class StealthManager:
         
     def _order_headers(self, headers: Dict[str, str]) -> OrderedDict:
         """Sort headers to match browser behavior"""
-        # Chrome order (simplified)
         order = ['Host', 'Connection', 'sec-ch-ua', 'sec-ch-ua-mobile', 
                  'sec-ch-ua-platform', 'User-Agent', 'Accept', 
                  'Sec-Fetch-Site', 'Sec-Fetch-Mode', 'Sec-Fetch-Dest', 
@@ -104,14 +91,12 @@ class StealthManager:
                  
         ordered = OrderedDict()
         for key in order:
-            # Case insensitive lookup
             matches = [k for k in headers.keys() if k.lower() == key.lower()]
             if matches:
                 ordered[matches[0]] = headers[matches[0]]
                 
-        # Add remaining
         for k, v in headers.items():
-            if k not in ordered and k not in [o.lower() for o in order]: # check effectively
+            if k not in ordered and k not in [o.lower() for o in order]:
                 ordered[k] = v
                 
         return ordered
@@ -131,30 +116,23 @@ class StealthManager:
         """Return a list of JS scripts to inject for deep spoofing."""
         scripts = []
         
-        # 1. Canvas Spoofing (Noise)
         scripts.append("""
             (() => {
                 const toDataURL = HTMLCanvasElement.prototype.toDataURL;
                 const getImageData = CanvasRenderingContext2D.prototype.getImageData;
-                
-                // Add noise to toDataURL
                 HTMLCanvasElement.prototype.toDataURL = function(type) {
                     const ctx = this.getContext('2d');
                     if (ctx) {
-                        // Draw a tiny invisible pixel with slight randomness
-                        const shift = Math.floor(Math.random() * 2) - 1; // -1, 0, or 1
+                        const shift = Math.floor(Math.random() * 2) - 1;
                         ctx.fillStyle = `rgba(0,0,0,0.0${Math.abs(shift)})`;
                         ctx.fillRect(0, 0, 1, 1);
                     }
                     return toDataURL.apply(this, arguments);
                 };
-                
-                // Add noise to getImageData
                 CanvasRenderingContext2D.prototype.getImageData = function(x, y, w, h) {
                     const image = getImageData.apply(this, arguments);
-                    // Modify a few random channels slightly
                     for (let i = 0; i < image.data.length; i += 4) {
-                         if (Math.random() < 0.01) { // 1% of pixels
+                         if (Math.random() < 0.01) {
                              image.data[i] = image.data[i] + (Math.floor(Math.random() * 4) - 2); 
                          }
                     }
@@ -163,29 +141,22 @@ class StealthManager:
             })();
         """)
         
-        # 2. WebGL Spoofing (Vendor/Renderer)
-        # We want to match the fake UA (Windows/Chrome) if possible, or just be generic.
-        # Ideally this should be dynamic based on fingerprint, but for now generic high-end GPU.
         scripts.append("""
             (() => {
                 const getParameter = WebGLRenderingContext.prototype.getParameter;
                 WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                    // UNMASKED_VENDOR_WEBGL
                     if (parameter === 37445) return 'Google Inc. (NVIDIA)';
-                    // UNMASKED_RENDERER_WEBGL
                     if (parameter === 37446) return 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)';
                     return getParameter.apply(this, arguments);
                 };
             })();
         """)
         
-        # 3. AudioContext Spoofing
         scripts.append("""
             (() => {
                 const getChannelData = AudioBuffer.prototype.getChannelData;
                 AudioBuffer.prototype.getChannelData = function(channel) {
                     const data = getChannelData.apply(this, arguments);
-                    // Add tiny noise
                     for (let i = 0; i < data.length; i+=100) {
                         data[i] = data[i] + (Math.random() * 0.0000001);
                     }

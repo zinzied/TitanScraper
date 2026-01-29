@@ -3,7 +3,6 @@ setup.py
 TitanScraper_Pro.egg-info/PKG-INFO
 TitanScraper_Pro.egg-info/SOURCES.txt
 TitanScraper_Pro.egg-info/dependency_links.txt
-TitanScraper_Pro.egg-info/entry_points.txt
 TitanScraper_Pro.egg-info/requires.txt
 TitanScraper_Pro.egg-info/top_level.txt
 titan/__init__.py

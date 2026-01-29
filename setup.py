@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name='TitanScraper-Pro',
-    version='2.0.0',
+    version='2.1.0',
     description='Next-gen Anti-Detection Scraper with AI & Browser Fallback',
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -13,8 +13,8 @@ setup(
     packages=find_packages(),
     install_requires=[
         'requests>=2.28.0',
+        'curl-cffi>=0.6.2',
         'playwright>=1.40.0',
-        'fake-useragent>=1.4.0',
         'SpeechRecognition>=3.10.0',
         'pydub>=0.25.1',
         'torch>=2.0.0',
@@ -23,9 +23,4 @@ setup(
         'numpy>=1.24.0'
     ],
     python_requires='>=3.8',
-    entry_points={
-        'console_scripts': [
-            'titan-train=train_captcha:main',
-        ],
-    },
 )

@@ -176,7 +176,7 @@ class BrowserManager:
                 
         return cookies_dict, final_ua
 
-    def get_content(self, url: str, timeout: int = 30, user_agent: str = None, proxy: Dict[str, str] = None, cookies: Dict = None, viewport: Dict[str, int] = None, extra_scripts: list = None, captcha_config: Dict = None) -> Dict[str, Any]:
+    def get_content(self, url: str, timeout: int = 30, user_agent: str = None, proxy: Dict[str, str] = None, cookies: Dict = None, viewport: Dict[str, int] = None, extra_scripts: list = None, captcha_config: Dict = None, block_resources: bool = True) -> Dict[str, Any]:
         """Fetch full page content using Playwright (Ultimate Bypass)."""
         try:
             from playwright.sync_api import sync_playwright
@@ -245,10 +245,16 @@ class BrowserManager:
                     context.add_init_script(script)
                 
             page = context.new_page()
-            context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
-            
-            page = context.new_page()
-            
+
+            # Resource Blocking
+            if block_resources:
+                def intercept_route(route):
+                    if route.request.resource_type in ["image", "stylesheet", "font", "media"]:
+                        route.abort()
+                    else:
+                        route.continue_()
+                page.route("**/*", intercept_route)
+
             try:
                 logger.info(f"Browser: Fetching content from {url}...")
                 resp = page.goto(url, wait_until='domcontentloaded', timeout=timeout*1000)

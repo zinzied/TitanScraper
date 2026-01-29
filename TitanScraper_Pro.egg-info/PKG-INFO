@@ -1,13 +1,13 @@
 Metadata-Version: 2.4
 Name: TitanScraper-Pro
-Version: 2.0.0
+Version: 2.1.0
 Summary: Next-gen Anti-Detection Scraper with AI & Browser Fallback
 Author: Titan Team
 Requires-Python: >=3.8
 Description-Content-Type: text/markdown
 Requires-Dist: requests>=2.28.0
+Requires-Dist: curl-cffi>=0.6.2
 Requires-Dist: playwright>=1.40.0
-Requires-Dist: fake-useragent>=1.4.0
 Requires-Dist: SpeechRecognition>=3.10.0
 Requires-Dist: pydub>=0.25.1
 Requires-Dist: torch>=2.0.0
@@ -47,7 +47,7 @@ TitanScraper is a high-performance scraping library designed to bypass the tough
 
 ```bash
 # 1. Install Python packages
-pip install .
+pip install TitanScraper-Pro
 
 # 2. Install Playwright Browsers
 playwright install chromium

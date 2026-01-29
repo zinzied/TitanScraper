@@ -93,29 +93,34 @@ class TitanScraper(BaseSession):
             self.headers = self.stealth.transform_headers(self.headers)
 
         # 3. Execution
+        allow_fallback = kwargs.pop('allow_fallback', True)
+        
         try:
-            # Check if we should use Playwright directly
-            if self.use_playwright:
-                return self._request_via_playwright(method, url, **kwargs)
-                
             # TLS Impersonation (curl_cffi)
             if HAS_CURL and "impersonate" not in kwargs:
                 # Default to the active Disguise Profile
                 kwargs["impersonate"] = self.disguise.get_profile()["impersonate"]
-                
-            # If standard requests (no curl), we might want to ensure verify is set or handled
             
+            # CRITICAL: Sync User-Agent with the chosen impersonation to avoid 403s
+            current_fp = kwargs.get("impersonate", "")
+            if "chrome" in current_fp:
+                self.headers['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            elif "firefox" in current_fp:
+                self.headers['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/109.0"
+            elif "safari" in current_fp:
+                self.headers['User-Agent'] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15"
+            elif "edge" in current_fp:
+                self.headers['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0"
+
             # Super call (handles either requests.Session or curl_cffi.Session)
             if HAS_CURL:
-                # curl_cffi uses 'impersonate' arg
                 response = super().request(method, url, **kwargs)
             else:
-                # Strip incompatible args if fallback to standard requests
                 kwargs.pop("impersonate", None)
                 response = super().request(method, url, **kwargs)
             
             # 4. Challenge Handling
-            if response.status_code in [403, 503]:
+            if response.status_code in [403, 503] and allow_fallback:
                  # Check for Cloudflare JSD challenge
                  if "Just a moment" in response.text and self.jsd_solver.is_available():
                      logging.info(f"Detected Cloudflare challenge on {url}. Attempting to solve with JSD Solver...")
@@ -220,8 +225,11 @@ class TitanScraper(BaseSession):
         
         # Cloudflare
         if "server" in headers and "cloudflare" in headers["server"].lower():
-            if "just a moment" in text or "turnstile" in text:
+            if "just a moment" in text or "turnstile" in text or "checking your browser" in text:
                 return "cloudflare_challenge"
+            # If it's a 200 OK and no challenge text, it's just a site behind CF, not a challenge.
+            if response.status_code == 200:
+                return "none"
             return "cloudflare_generic"
             
         # Akamai
@@ -255,11 +263,10 @@ class TitanScraper(BaseSession):
         logging.info(f"TitanScraper: Analyzing {url}...")
         
         # 1. Initial Probe (Lightweight)
-        # Use a standard Chrome fingerprint
+        # Use a standard Chrome fingerprint, but don't fallback to browser inside request()
         try:
-            resp = self.get(url, impersonate="chrome120")
+            resp = self.get(url, impersonate="chrome120", allow_fallback=False)
         except Exception:
-            # If plain connection fails, assume network block or aggressive filter
             resp = None
 
         if resp and resp.ok:
@@ -273,51 +280,34 @@ class TitanScraper(BaseSession):
         logging.info(f"TitanScraper: Detected Protection = {protection.upper()}")
         
         # 3. Select Strategy
-        if protection in ["cloudflare_challenge", "cloudflare_generic"]:
-             # Strategy: Try JSD -> If fail, Browser
-             if self.jsd_solver.is_available():
-                 # request() hook handles checking for JSD success
-                 # We just need to trigger a request that might trigger the hook
-                 # usage of .get() with the hook enabled in request() should work
-                 logging.info("Strategy: Engaging Cloudflare Solvers...")
-                 pass 
-             
-             # If we are here, it means JSD might have run inside `self.get` above or detection found it.
-             # Let's try the Ultimate Fallback immediately for challenges
-             logging.info("Strategy: Cloudflare detected. Triggering Browser Engine...")
-             return self._browser_fallback(url)
-
-        elif protection in ["akamai", "incapsula", "datadome"]:
-            # Strategy: Browser is usually required for these JS-heavy checks
-            logging.info(f"Strategy: {protection} detected. Converting to Browser Engine...")
-            return self._browser_fallback(url)
-            
-        elif protection == "aws_waf" or protection == "generic_403":
-            # Strategy: Rotate TLS Fingerprints
-            # AWS WAF often blocks specific TLS fingerprints (e.g. Python requests)
-            # We already tried chrome120. Let's try others.
-            logging.info("Strategy: 403 Forbidden. Rotating TLS Fingerprints...")
-            
-            fingerprints = ["safari15_3", "firefox109", "ios15_5"] # curl_cffi options
+        
+        # Strategy A: TLS Rotation (Fastest)
+        # Try this for generic blocks, AWS WAF, or even Cloudflare challenges
+        if protection in ["aws_waf", "generic_403", "cloudflare_generic", "cloudflare_challenge", "unknown"]:
+            logging.info("Strategy: Protected. Attempting TLS Fingerprint Rotation...")
+            # Use supported fingerprints found in curl_cffi metadata
+            fingerprints = ["firefox133", "chrome120", "safari15_3", "edge101"]
             for fp in fingerprints:
                 logging.info(f"Trying TLS: {fp}...")
                 try:
-                    retry_resp = self.get(url, impersonate=fp)
+                    retry_resp = self.get(url, impersonate=fp, allow_fallback=False)
                     if retry_resp.ok:
                         logging.info(f"Success with {fp}!")
                         return retry_resp
                 except Exception as e:
                     logging.warning(f"TLS {fp} failed: {e}")
-                    
-            # If all TLS fail, try browser
-            return self._browser_fallback(url)
 
-        # Default: Return the probe response or browser fallback if None
-        if resp:
-            return resp
+        # Strategy B: Cloudflare Specific Solvers
+        if protection in ["cloudflare_challenge"]:
+             if self.jsd_solver.is_available():
+                  logging.info("Strategy: Engaging Cloudflare Solvers...")
+                  # Logic already inside request() will handle JSD solve if possible
+             
+        # Strategy C: Ultimate Browser Fallback (Slowest but most reliable)
+        logging.info("Strategy: Escalating to Browser Engine (Ultimate Bypass)...")
         return self._browser_fallback(url)
 
-    def _browser_fallback(self, url: str) -> requests.Response:
+    def _browser_fallback(self, url: str, block_resources: bool = True) -> requests.Response:
         """Helper to run browser fallback and wrap response."""
         
         # Disguise Configuration
@@ -332,7 +322,8 @@ class TitanScraper(BaseSession):
             cookies=self.cookies.get_dict(),
             viewport=viewport,
             extra_scripts=[init_script],
-            captcha_config=self.captcha_config
+            captcha_config=self.captcha_config,
+            block_resources=block_resources
         )
         
         # Sync Session
